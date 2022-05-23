@@ -1,10 +1,14 @@
 import numpy as np
 from NESMOTE.util import SortedArray
 
+from math import floor, ceil
+
 from copy import deepcopy
 
+from time import time
+
 class NeighborhoodGraph:
-    def __init__(self, dist_func, dataset=None, k_neighbors=16, dist_restriction=None):
+    def __init__(self, dist_func, dataset=None, k_neighbors=5, dist_restriction=None):
         '''
             dist_func        : callable, accepts two rows of a dataset and returns float
             dataset          : np.array(), points to construct on
@@ -23,7 +27,7 @@ class NeighborhoodGraph:
         if self.points is not None:
             self.construct()
         
-    def wrap_around(self, dataset, k_neighbors=16, dist_restriction=None):
+    def wrap_around(self, dataset, k_neighbors=5, dist_restriction=None):
         '''
             dataset          : np.array(), points to construct on
             k_neighbors      : int, closests points cut, 0  for no cut
@@ -47,37 +51,38 @@ class NeighborhoodGraph:
             self.adapt_limit()
         self.ring_construct()
         
-    def ring_construct(self, nrings=0):
+    def ring_construct(self):
         '''
-            nrings : int, number of constructor rings, 0 for default
-
             use a ring metod to split all points into rings of self.limit width
             this lowers the amount of negative calculations significantly
             effectively bringing time complexity to O(n) precount + O(n * k) count
             where k stands for graph density and normally would be assumed O(1)
         '''
-        if nrings == 0:
-            nrings = self.points.shape[1] + 1
-
+        nrings = self.points.shape[1] + 1
         # choose random points as ring origins
         origins = np.random.choice(np.arange(self.points.shape[0]), nrings)
         splits = {}
         for oid in origins:
             O = self.points[oid]
             # use lambda-apply to count distances a bit faster
-            f_O = lambda A: int(self.distance(A, O) / self.limit)
+            f_O = lambda A: self.distance(A, O) / self.limit
             ring_dists = np.apply_along_axis(f_O, 1, self.points)
             ring_split = {}
             # linear index run to use fast inserts 
             idx = 0
             for dist in ring_dists:
-                if ring_split.get(dist) is None:
-                    ring_split[dist] = SortedArray()
-                    ring_split[dist].reset()
-                ring_split[dist].insert(idx)
+                low = floor(dist)
+                high = ceil(dist)
+                if ring_split.get(low) is None:
+                    ring_split[low] = SortedArray()
+                    ring_split[low].reset()
+                if ring_split.get(high) is None:
+                    ring_split[high] = SortedArray()
+                    ring_split[high].reset()
+                ring_split[low].insert(idx)
+                ring_split[high].insert(idx)
                 idx += 1
             splits[oid] = ring_split
-        
         # linear index run for graph construction
         cnt = 0
         for A in self.points:
@@ -86,16 +91,11 @@ class NeighborhoodGraph:
             for origin_id in origins:
                 possible = SortedArray()
                 possible.reset()
-                d = int(self.distance(A, self.points[origin_id]) / self.limit)
-                for i in range(min(0, d-1), d + 2):
-                    i_ring = splits[origin_id].get(i)
-                    if i_ring is not None:
-                        possible += i_ring
+                d = round(self.distance(A, self.points[origin_id]) / self.limit)
                 if candidates is None:
-                    candidates = possible
+                    candidates = splits[origin_id].get(d)
                 else:
-                    candidates *= possible
-            
+                    candidates *= splits[origin_id].get(d)
             # use lambda-apply to count distances a bit faster
             record = {"left": SortedArray(), "right": SortedArray()}
             record["left"].reset()
@@ -118,7 +118,7 @@ class NeighborhoodGraph:
             cnt += 1
 
     
-    def adapt_limit(self, nsamples=16, cut=.025):
+    def adapt_limit(self, nsamples=8, cut=.025):
         '''
             nsamples : int, number of points to sample
             cut      : float, 0 < cut < 1, nearby percentage
@@ -127,9 +127,7 @@ class NeighborhoodGraph:
             for each sample all distances are count and cut percentage is taken
             average of last in lists is the adapted limit
         '''
-        edge = self.neighbor_cut * 2
-        if edge == 0:
-            edge = int(self.points.shape[0] * cut)
+        edge = min(self.neighbor_cut * 2, max(5, int(self.points.shape[0] * cut)))
         origins = np.random.choice(np.arange(self.points.shape[0]), nsamples)
         mean_cut = 0
         for O in self.points[origins]:

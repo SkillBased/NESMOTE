@@ -84,16 +84,24 @@ class SortedArray:
         '''
         result = SortedArray()
         result.reset()
-        i = 0
-        for value in other.values:
-            while (i < len(self.values) and self.values[i] <= value):
-                if (self.values[i] < value):
-                    result.push(self.values[i])
+        i, j = 0, 0
+        while i < len(self.values) and j < len(other.values):
+            if self.values[i] < other.values[j]:
+                result.push(self.values[i])
                 i += 1
-            result.push(value)
+            elif self.values[i] > other.values[j]:
+                result.push(other.values[j])
+                j += 1
+            else:
+                result.push(self.values[i])
+                i += 1
+                j += 1
         while i < len(self.values):
             result.push(self.values[i])
             i += 1
+        while j < len(other.values):
+            result.push(other.values[j])
+            j += 1
         return result
     
     def __iadd__(self, other):
@@ -109,12 +117,16 @@ class SortedArray:
         '''
         result = SortedArray()
         result.reset()
-        i = 0
-        for value in other.values:
-            while (i < len(self.values) and self.values[i] <= value):
-                if (self.values[i] < value):
-                    result.push(self.values[i])
+        i, j = 0, 0
+        while i < len(self.values) and j < len(other.values):
+            if self.values[i] < other.values[j]:
+                result.push(self.values[i])
                 i += 1
+            elif self.values[i] > other.values[j]:
+                j += 1
+            else:
+                i += 1
+                j += 1
         while i < len(self.values):
             result.push(self.values[i])
             i += 1
@@ -133,15 +145,16 @@ class SortedArray:
         '''
         result = SortedArray()
         result.reset()
-        i = 0
-        for value in other.values:
-            while (i < len(self.values) and self.values[i] <= value):
-                if (self.values[i] == value):
-                    result.push(self.values[i])
+        i, j = 0, 0
+        while i < len(self.values) and j < len(other.values):
+            if self.values[i] < other.values[j]:
                 i += 1
-        while i < len(self.values):
-            result.push(self.values[i])
-            i += 1
+            elif self.values[i] > other.values[j]:
+                j += 1
+            else:
+                result.push(self.values[i])
+                i += 1
+                j += 1
         return result
 
     def __imul__(self, other):

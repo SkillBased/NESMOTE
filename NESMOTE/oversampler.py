@@ -3,6 +3,10 @@ from NESMOTE.base import NeighborhoodGraph, SortedArray
 
 from random import random, gammavariate
 
+#
+from time import time
+#
+
 '''
 
 parametrers - augmentation:
@@ -30,8 +34,9 @@ parametrers - augmentation groups:
 -- "neighbors" : all closest neighbors for each point form a group
 -- "cliques"   : find maximal cliques
 
--> group-cut
--- int >= 0   : all cliques smaller than this parameter will be dropped
+-> wrap
+-- all : all maximal cliques are used
+-- max : only one greatest clique is used
 
 '''
 
@@ -57,7 +62,7 @@ class NESMOTE:
             index = (y == value)
             class_pts = X[index]
             # setup graph args
-            k_neighbors = self.parameters.get("k-neighbors") if self.parameters.get("k-neighbors") is not None else 16
+            k_neighbors = self.parameters.get("k-neighbors") if self.parameters.get("k-neighbors") is not None else 5
             dist_restriction = self.parameters.get("distance")
             # fit a graph to class and split it
             class_ng = NeighborhoodGraph(self.distance, class_pts, k_neighbors, dist_restriction)
@@ -69,10 +74,14 @@ class NESMOTE:
             if count > self.dominant_size:
                 self.dominant_size = count
             cutoff = self.parameters.get("group-cut") if self.parameters.get("group-cut") is not None else 0
-            smp.full_wrap(class_ng.get_groups(), cutoff)
+            wrap = self.parameters.get("wrap") if self.parameters.get("wrap") is not None else "max"
+            if wrap == "all":
+                smp.full_wrap(class_ng.get_groups(), cutoff)
+            else:
+               smp.max_wrap(class_ng.get_groups())
             self.samplers.append(smp)
 
-    def sample(self, X, y):
+    def resample(self, X, y):
         '''
             X : array-like of shape ..., n
             y : array-like of shape n
@@ -128,9 +137,10 @@ class NESMOTE:
 
         return nX, ny
 
-    def fit_sample(self, X, y):
+    def fit_resample(self, X, y):
         self.fit(X, y)
-        return self.sample(X, y)
+        P, q = self.resample(X, y)
+        return P, q
 
 
 class ClassSampler:
