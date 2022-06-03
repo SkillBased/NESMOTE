@@ -133,6 +133,7 @@ class NeighborhoodGraph:
         for O in self.points[origins]:
             f_O = lambda A: self.distance(A, O)
             dists = np.apply_along_axis(f_O, 1, self.points)
+            edge = min(edge, dists.shape[0] - 1)
             mean_cut += sorted(dists)[edge]
         self.limit = mean_cut / nsamples
     
@@ -147,6 +148,8 @@ class NeighborhoodGraph:
             self.clique_split()
         elif how == "neighbors":
             self.neighbor_split()
+        elif how == "smote":
+            self.smote_split()
 
     def neighbor_split(self):
         '''
@@ -154,6 +157,15 @@ class NeighborhoodGraph:
         '''
         for curr_vert in self.adj_list.keys():
             self.cliques[curr_vert] = [deepcopy(self.adj_list[curr_vert]["left"]) + deepcopy(self.adj_list[curr_vert]["right"])]
+
+    def smote_split(self):
+        '''
+            make a smote-like edge groups
+        '''
+        for curr_vert in self.adj_list.keys():
+            self.cliques[curr_vert] = []
+            for neighbor in self.adj_list[curr_vert]["left"].values:
+                self.cliques[curr_vert] += [SortedArray(values=[neighbor, curr_vert], trusted=True)]
 
     def clique_split(self):
         '''
