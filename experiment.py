@@ -49,23 +49,12 @@ class NotOverSampler:
         return X, y
 
 
-
-overs = {
-    "Baseline" : NotOverSampler(),
-    "RandomOS" : RandomOverSampler(),
-    "IL-SMOTE" : SMOTE(),
-    "NE - MAX" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "cliques", "wrap": "all"}),
-    "NE - ALL" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "cliques", "wrap": "max"}),
-    "NE - KNN" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "neighbors", "wrap": "max"}),
-    "NE-SMOTE" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "smote", "wrap": "all"}),
-}
-
-
 def run_trial(dataset, oversampler, classifier, nruns=5):
     cum = None
     for _ in range(nruns):
-        X_train, X_test, y_train, y_test = train_test_split(dataset.data, dataset.target, train_size=.25)
-        X_train_OS, y_train_OS = oversampler.fit_resample(X_train, y_train)
+        X, y = dataset.data, dataset.target
+        X_OS, y_OS = oversampler.fit_resample(X, y)
+        X_train_OS, X_test, y_train_OS, y_test = train_test_split(X_OS, y_OS, train_size=.3)
         classifier.fit(X_train_OS, y_train_OS)
         preds = classifier.predict(X_test)
         ca = compute_classwize_accuracy(y_test, preds)
@@ -77,12 +66,13 @@ def run_trial(dataset, oversampler, classifier, nruns=5):
                 cum[c][1] += ca[c][1]
     return get_scores(cum)
 
-OS_names = ["Baseline", "RandomOS", "IL-SMOTE", "NE - max", "NE - all", "NE - KNN", "NE-SMOTE"]
+OS_names = ["Baseline", "IL-SMOTE", "NE - max", "NE - all", "NE - KNN", "NE-SMOTE"]
 ds_names = ["ecoli", "optical_digits", "abalone", "sick_euthyroid", "spectrometer", "car_eval_34",
             "us_crime", "yeast_ml8", "scene", "car_eval_4", "thyroid_sick", "wine_quality", "solar_flare_m0",
             "oil", "yeast_me2", "ozone_level", "abalone_19"]
+ds_names = ["ecoli", "oil", "scene"]
 suites = sorted(ds_names)
-kn_values = [2, 3, 5, 8, 10]
+kn_values = [3, 5, 8]
 
 results_acc = {}
 results_bacc = {}
@@ -96,16 +86,19 @@ for dataset_name in suites:
 
 run = 1
 for kneighbors in kn_values:
-    print(f"\n<> Started run {run}/5 with k_neighbors={kneighbors} <>")
+    print(f"\n<> Started run {run}/{len(kn_values)} with k_neighbors={kneighbors} <>")
     run += 1
 
     oversamplers = {
         "Baseline" : NotOverSampler(),
         "RandomOS" : RandomOverSampler(),
         "IL-SMOTE" : SMOTE(k_neighbors=kneighbors),
-        "NE - max" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "cliques", "wrap": "all", "k-neighbors": kneighbors}),
-        "NE - all" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "cliques", "wrap": "max", "k-neighbors": kneighbors}),
-        "NE - KNN" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "neighbors", "wrap": "max", "k-neighbors": kneighbors}),
+        "NE-maxSP" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "cliques", "wrap": "max", "k-neighbors": kneighbors}),
+        "NE-maxAG" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "cliques", "wrap": "max", "k-neighbors": kneighbors, "weights": "gamma"}),
+        "NE-allSP" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "cliques", "wrap": "all", "k-neighbors": kneighbors}),
+        "NE-allAG" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "cliques", "wrap": "all", "k-neighbors": kneighbors, "weights": "gamma"}),
+        "NE-KNNSP" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "neighbors", "wrap": "max", "k-neighbors": kneighbors}),
+        "NE-KNNAG" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "neighbors", "wrap": "max", "k-neighbors": kneighbors, "weights": "gamma"}),
         "NE-SMOTE" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "smote", "wrap": "all", "k-neighbors": kneighbors}),
     }
 

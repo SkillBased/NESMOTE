@@ -61,24 +61,11 @@ class NESMOTE:
         for value, count in np.transpose(np.unique(y, return_counts=True)):
             index = (y == value)
             class_pts = X[index]
-            # setup graph args
-            k_neighbors = self.parameters.get("k-neighbors") if self.parameters.get("k-neighbors") is not None else 5
-            dist_restriction = self.parameters.get("distance")
-            # fit a graph to class and split it
-            class_ng = NeighborhoodGraph(self.distance, class_pts, k_neighbors, dist_restriction)
-            split_type = self.parameters.get("groupby") if self.parameters.get("groupby") is not None else "cliques"
-            class_ng.split(how=split_type)
-            # construct class sampler
-            smp = ClassSampler(value, class_pts, self.group_sampler)
             self.input_sizes[value] = count
             if count > self.dominant_size:
                 self.dominant_size = count
-            cutoff = self.parameters.get("group-cut") if self.parameters.get("group-cut") is not None else 0
-            wrap = self.parameters.get("wrap") if self.parameters.get("wrap") is not None else "max"
-            if wrap == "all":
-                smp.full_wrap(class_ng.get_groups(), cutoff)
-            else:
-               smp.max_wrap(class_ng.get_groups())
+            # construct class sampler
+            smp = ClassSampler(value, class_pts, self.parameters, self.distance, self.group_sampler)
             self.samplers.append(smp)
 
     def resample(self, X, y):
@@ -97,6 +84,7 @@ class NESMOTE:
 
         if strategy == "resample":
             for sampler in self.samplers:
+                sampler.prep()
                 n = self.input_sizes[sampler.pt_class]
                 sX = sampler.generate(n, weighter)
                 sy = np.array([sampler.pt_class] * n)
@@ -110,6 +98,7 @@ class NESMOTE:
         if strategy == "rebalance":
             n = int(y.shape[0] / len(self.samplers))
             for sampler in self.samplers:
+                sampler.prep()
                 sX = sampler.generate(n, weighter)
                 sy = np.array([sampler.pt_class] * n)
                 if nX is None:
@@ -126,6 +115,7 @@ class NESMOTE:
                 n = self.dominant_size - self.input_sizes[sampler.pt_class]
                 if (n < 1):
                     continue
+                sampler.prep()
                 sX = sampler.generate(n, weighter)
                 sy = np.array([sampler.pt_class] * n)
                 if nX is None:
@@ -144,36 +134,44 @@ class NESMOTE:
 
 
 class ClassSampler:
-    def __init__(self, pt_class, points, sampler_func):
+    def __init__(self, pt_class, points, parameters, dist_func, sampler_func):
         self.groups = []
-        self.distributions = []
 
         self.points = points
         self.pt_class = pt_class
         self.count = self.points.shape[0]
 
+        self.parameters = parameters
+
+        self.distance = dist_func
         self.sampler = sampler_func
     
+    def prep(self):
+        # setup graph args
+        k_neighbors = self.parameters.get("k-neighbors") if self.parameters.get("k-neighbors") is not None else 5
+        dist_restriction = self.parameters.get("distance")
+        # fit a graph to class and split it
+        class_ng = NeighborhoodGraph(self.distance, self.points, k_neighbors, dist_restriction)
+        split_type = self.parameters.get("groupby") if self.parameters.get("groupby") is not None else "cliques"
+        class_ng.split(how=split_type)
+        cutoff = self.parameters.get("group-cut") if self.parameters.get("group-cut") is not None else 0
+        wrap = self.parameters.get("wrap") if self.parameters.get("wrap") is not None else "max"
+        if wrap == "all":
+            self.full_wrap(class_ng.get_groups(), cutoff)
+        else:
+            self.max_wrap(class_ng.get_groups())
+    
     def max_wrap(self, cliques):
-        weight = 0
         for pid in range(self.count):
             p_cliques = cliques[pid]
             if len(p_cliques) > 0:
                 maximal = max(p_cliques).values
                 maximal += [pid]
                 self.groups.append(maximal)
-                w = 1
-                self.distributions.append(w)
-                weight += w
             else:
                 self.groups.append([pid])
-                self.distributions.append(1)
-                weight += 1
-        self.distributions = np.array(self.distributions)
-        self.distributions = self.distributions / weight
 
     def full_wrap(self, cliques, cutoff=3):
-        weight = 0
         maxes = []
         for pid in range(self.count):
             p_cliques = cliques[pid]
@@ -199,21 +197,12 @@ class ClassSampler:
         for clique in maxes:
             body = clique.values
             self.groups.append(body)
-            self.distributions.append(len(body))
-            weight += len(body)
-        self.distributions = np.array(self.distributions)
-        self.distributions = self.distributions / weight
 
     def generate(self, n_points, weighter="standard"):
         res = []
-        for _ in range(n_points):
-            search = random()
-            gid = 0
-            while search - self.distributions[gid] > 0:
-                search -= self.distributions[gid]
-                gid += 1
-            aug_points = self.points[self.groups[gid]]
-            aug_weights = None
+        group_ids = np.random.choice(np.arange(0, len(self.groups)), size=n_points, replace=True)
+        for idx in group_ids:
+            aug_points = self.points[self.groups[idx]]
             if weighter == "gamma":
                 aug_weights = np.array(adaptive_gamma_picker(len(aug_points)))
             else:
