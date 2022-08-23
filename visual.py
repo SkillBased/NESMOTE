@@ -51,13 +51,13 @@ upscale = {
 }
 
 reb = NESMOTE(std_euclid_distance, std_euclid_wavg, rebalance)
-rebX, reby = reb.fit_sample(pts, y)
+rebX, reby = reb.fit_resample(pts, y)
 
 res = NESMOTE(std_euclid_distance, std_euclid_wavg, resample)
-resX, resy = res.fit_sample(pts, y)
+resX, resy = res.fit_resample(pts, y)
 
 ups = NESMOTE(std_euclid_distance, std_euclid_wavg, upscale)
-upsX, upsy = ups.fit_sample(pts, y)
+upsX, upsy = ups.fit_resample(pts, y)
 
 pts_colors = ["#5e0000", "#005e00", "#00005e"]
 aux_colors = ["#ae0000", "#00ae00", "#0000ae"]
