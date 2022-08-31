@@ -1,7 +1,12 @@
 import numpy as np
+from numpy.random import choice, randint
 from NESMOTE.base import NeighborhoodGraph, SortedArray
+from NESMOTE.util import IndexedCoverTree
 
 from random import random, gammavariate
+
+from joblib import Parallel, delayed
+
 
 #
 from time import time
@@ -232,3 +237,84 @@ def standard_picker(n):
     for i in range(n):
         weights[i] = weights[i] / weight_sum
     return weights
+
+class Oversampler:
+    def __init__(self, data, pt_class, dist, sample, params={}) -> None:
+        self.data = data
+        self.pt_class = pt_class
+
+        self.dist = dist
+        self.sample = sample
+
+        self.params = params
+        self.mode = params.get("mode") if params.get("mode") is not None else "ND-SMOTE"
+
+        self.cover_tree = IndexedCoverTree(self.dist, self.data)
+    
+    def generate_smote(self, n_points, n_jobs):
+        points = Parallel(n_jobs=n_jobs)(delayed(self.get_smote_point)() for _ in range(n_points))
+        return points
+    
+    def get_smote_point(self, edge=False):
+        origin = self.data[randint(0, len(self.data))]
+        k = self.params.get("k-neighbors") if self.params.get("k-neighbors") is not None else 5
+        knn = self.cover_tree.knn(origin, k)
+        group = [self.data[choice(knn)], origin]
+
+        if not edge:
+            group = self.data[knn]
+        
+        weights = standard_picker(len(group))
+
+        return self.sample(weights, group)
+
+
+class FastNESMOTE:
+    def __init__(self, dist, sampler):
+        self.distance = dist
+        self.sample = sampler
+
+        self.input_sizes = {}
+        self.majority_size = 0
+
+    def fit(self, X, y):
+        '''
+            X : array-like of shape ..., n
+            y : array-like of shape n
+
+            fit the augmenter to the data given
+        '''
+        self.samplers = []
+        for value, count in np.transpose(np.unique(y, return_counts=True)):
+            timer = time()
+            class_pts = X[y == value]
+            self.input_sizes[value] = count
+            if count > self.majority_size:
+                self.majority_size = count
+            # construct class sampler
+            smp = Oversampler(class_pts, value, self.distance, self.sample)
+            self.samplers.append(smp)
+        
+    def resample(self, X, y):
+        nX = X
+        ny = y
+        for sampler in self.samplers:
+            n = self.majority_size - self.input_sizes[sampler.pt_class]
+            if (n < 1):
+                continue
+            sX = sampler.generate_smote(n, n_jobs=8)
+            sy = np.array([sampler.pt_class] * n)
+            if nX is None:
+                nX = sX
+                ny = sy
+            else:
+                nX = np.vstack([nX, sX])
+                ny = np.hstack([ny, sy])
+        return nX, ny
+   
+    def fit_resample(self, X, y):
+        self.fit(X, y)
+        P, q = self.resample(X, y)
+        return P, q 
+
+    

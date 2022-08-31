@@ -18,8 +18,13 @@ class NeighborhoodGraph:
             constructs the graph automatically if dataset is provided in class constructor
         '''
         self.distance = dist_func
+
+        self.origins = []
+        self.rings = {}
+
         self.adj_list = {}
         self.cliques = {}
+
         self.points = dataset
         self.neighbor_cut = k_neighbors
         self.limit = dist_restriction
@@ -50,72 +55,89 @@ class NeighborhoodGraph:
         if self.limit is None:
             self.adapt_limit()
         self.ring_construct()
+
+    
+    '''
+    The idea is that in naive implementation ~99% of distance calculations are done to claim
+    that points are far away. Using rings we can simply remove great portion of these calculations,
+    therefore significantly reducing overall complexity. Formally, the time complexity
+    of all knn searches is still O(n*n), however heavy distance calculations are mostly replaced 
+    by fast set operations. In euclidean spaces this can be taken one step further with use of
+    grid structure instead of rings --- this removes the problem of ring population ineqality.
+    '''
+
+    def split_to_rings(self):
+        # get enough origins to claim that all-rings intersection is a single connected area
+        nrings = self.points.shape[1] + 1
+        # choose random points for origins
+        # ctatistically it is unlikely to get a bad case here
+        # more importantly, getting just a bad case will not affect performance
+        # problems start with about a quarter of all points within small distance
+        self.origins = np.random.choice(np.arange(self.points.shape[0]), nrings)
+        self.rings = {}
+        # for all chosen origins
+        for oid in self.origins:
+            # setup an empty ring
+            self.rings[oid] = {}
+            # find distances from origin to all points
+            O = self.points[oid]
+            f_O = lambda A: self.distance(A, O) / self.limit
+            origin_dists = np.apply_along_axis(f_O, 1, self.points)
+            # for each point and respective distance
+            for idx, distance in enumerate(origin_dists):
+                # determine two rings for the point
+                # this optimisation allows to skip ring joins later
+                inner = floor(distance)
+                outer = ceil(distance)
+                # init rings if needed
+                if self.rings[oid].get(inner) is None:
+                    self.rings[oid][inner] = set()
+                if self.rings[oid].get(outer) is None:
+                    self.rings[oid][outer] = set()
+                # add point to rings
+                self.rings[oid][inner].add(idx)
+                self.rings[oid][outer].add(idx)
+                # note: it is highly inlikely to land exactly on ring border
+                # even if that happens, float inacuracy almost guarrantees correctness
+
+
         
     def ring_construct(self):
-        '''
-            use a ring metod to split all points into rings of self.limit width
-            this lowers the amount of negative calculations significantly
-            effectively bringing time complexity to O(n) precount + O(n * k) count
-            where k stands for graph density and normally would be assumed O(1)
-        '''
-        nrings = self.points.shape[1] + 1
-        # choose random points as ring origins
-        origins = np.random.choice(np.arange(self.points.shape[0]), nrings)
-        splits = {}
-        for oid in origins:
-            O = self.points[oid]
-            # use lambda-apply to count distances a bit faster
-            f_O = lambda A: self.distance(A, O) / self.limit
-            ring_dists = np.apply_along_axis(f_O, 1, self.points)
-            ring_split = {}
-            # linear index run to use fast inserts 
-            idx = 0
-            for dist in ring_dists:
-                low = floor(dist)
-                high = ceil(dist)
-                if ring_split.get(low) is None:
-                    ring_split[low] = SortedArray()
-                    ring_split[low].reset()
-                if ring_split.get(high) is None:
-                    ring_split[high] = SortedArray()
-                    ring_split[high].reset()
-                ring_split[low].insert(idx)
-                ring_split[high].insert(idx)
-                idx += 1
-            splits[oid] = ring_split
-        # linear index run for graph construction
-        cnt = 0
-        for A in self.points:
-            # use rings to cut far away points
+        # get all rings ready
+        self.split_to_rings()
+        # for each point in data
+        for idx, A in enumerate(self.points):
+            # determine all candidates for nearest neighbors
             candidates = None
-            for origin_id in origins:
-                possible = SortedArray()
-                possible.reset()
+            # for all ring origins
+            for origin_id in self.origins:
+                # get the point ring number
                 d = round(self.distance(A, self.points[origin_id]) / self.limit)
+                # update candidates --- intrersect with new ring
                 if candidates is None:
-                    candidates = splits[origin_id].get(d)
+                    candidates = self.rings[origin_id].get(d)
                 else:
-                    candidates *= splits[origin_id].get(d)
-            # use lambda-apply to count distances a bit faster
+                    candidates.intersection_update(self.rings[origin_id].get(d))
+            # init the record
             record = {"left": SortedArray(), "right": SortedArray()}
             record["left"].reset()
             record["right"].reset()
+            # process the candidates
             counted_cands = []
             f_A = lambda B_id: (self.distance(A, self.points[B_id]), B_id)
-            for B_id in candidates.values:
+            for B_id in candidates:
                 counted_cands += [f_A(B_id)]
             counted_cands.sort()
-            if self.neighbor_cut != 0 and self.neighbor_cut < len(counted_cands):
-                counted_cands = counted_cands[:self.neighbor_cut]
             # cut k closest points
             # for sparse sections it is intented to not fill sometimes
+            if self.neighbor_cut != 0 and self.neighbor_cut < len(counted_cands):
+                counted_cands = counted_cands[:self.neighbor_cut]
             for _, pid in counted_cands:
-                if pid < cnt:
+                if pid < idx:
                     record["left"].insert(pid)
                 else:
                     record["right"].insert(pid)
-            self.adj_list[cnt] = record
-            cnt += 1
+            self.adj_list[idx] = record
 
     
     def adapt_limit(self, nsamples=8, cut=.025):

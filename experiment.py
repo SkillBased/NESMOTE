@@ -66,13 +66,24 @@ def run_trial(dataset, oversampler, classifier, nruns=5):
                 cum[c][1] += ca[c][1]
     return get_scores(cum)
 
-OS_names = ["Baseline", "IL-SMOTE", "NE - max", "NE - all", "NE - KNN", "NE-SMOTE"]
+OS_names = ["Baseline",
+            "RandomOS",
+            "IL-SMOTE",
+            "NE-maxSP",
+            "NE-maxAG",
+            "NE-allSP",
+            "NE-allAG",
+            "NE-KNNSP",
+            "NE-KNNAG",
+            "NE-SMOTE"]
+
 ds_names = ["ecoli", "optical_digits", "abalone", "sick_euthyroid", "spectrometer", "car_eval_34",
-            "us_crime", "yeast_ml8", "scene", "car_eval_4", "thyroid_sick", "wine_quality", "solar_flare_m0",
-            "oil", "yeast_me2", "ozone_level", "abalone_19"]
-ds_names = ["ecoli", "oil", "scene"]
+            "us_crime", "yeast_ml8", "car_eval_4", "thyroid_sick", "wine_quality", "solar_flare_m0",
+            "yeast_me2", "ozone_level", "abalone_19"]
+#ds_names = ["ecoli", "oil", "scene"]
 suites = sorted(ds_names)
 kn_values = [3, 5, 8]
+kn_values = [5]
 
 results_acc = {}
 results_bacc = {}
@@ -143,4 +154,4 @@ for dataset_name in suites:
             out_file.write("{:10} ".format("--"))
     out_file.write("\n")
 
-out_file.close()        
+out_file.close()  

@@ -1,0 +1,2 @@
+dataset            imblearn ann    ring method      cover tree    naive search
+ecoli                    0.0050          0.0440          0.7444          0.3106

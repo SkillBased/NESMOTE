@@ -5,7 +5,7 @@ from sklearn.datasets import make_moons
 from imblearn.datasets import make_imbalance
 
 from NESMOTE.util import std_euclid_distance, std_euclid_wavg
-from NESMOTE.oversampler import NESMOTE
+from NESMOTE.oversampler import NESMOTE, FastNESMOTE
 
 root = Tk()
 root.title("NESMOTE augmentation strategies")
@@ -56,7 +56,7 @@ rebX, reby = reb.fit_resample(pts, y)
 res = NESMOTE(std_euclid_distance, std_euclid_wavg, resample)
 resX, resy = res.fit_resample(pts, y)
 
-ups = NESMOTE(std_euclid_distance, std_euclid_wavg, upscale)
+ups = FastNESMOTE(std_euclid_distance, std_euclid_wavg)
 upsX, upsy = ups.fit_resample(pts, y)
 
 pts_colors = ["#5e0000", "#005e00", "#00005e"]

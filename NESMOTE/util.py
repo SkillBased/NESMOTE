@@ -1,9 +1,11 @@
 import numpy as np
-from random import choice
 
+from numpy.random import choice
 from heapq import heapify, heappush
 
-from time import sleep
+from time import time
+
+EPS = 1e-6
 
 class SortedArray:
     '''
@@ -213,201 +215,168 @@ def std_euclid_wavg(weights, points):
     return x
 
 
-class CTINdexedPoint:
-    def __init__(self, pid=-1, distance=0):
-        self.pid = pid
-        self.distance = distance
-    
-    def __lt__(self, other):
-        return self.distance < other.distance
-
-    def __le__(self, other):
-        return self.distance <= other.distance
-
-
-class CoverTree:
-    def __init__(self, dist_func=None):
-        self.points = []
+class IndexedCoverTree:
+    def __init__(self, dist_func, data=None, max_depth=None, base=None, factor=2, fast=False):
         self.dist = dist_func
-        self.covers = {-1: []}
+        self.max_depth = max_depth
+        self.base = base
+        self.factor = factor
 
-        self.limit = 1
-        self.factor = 2
-    
-    def distance(self, a, b):
-        return self.dist(self.points[a], self.points[b])
-    
-    def check_terminal(self, points):
-        for pt in points:
-            if len(self.covers[pt]) > 1:
-                return False
-        return True
+        self.points = []
+        self.tree = {-1: set()}
 
-    def descend(self, current):
-        children = []
-        for parent in current:
-            children.extend(self.covers[parent])
+        if data is not None:
+            if self.base is None:
+                self.base = self.guess_base(data)
+            if self.max_depth is None:
+                self.max_depth = int(np.log2(len(data))) + 1
+            for pt in data:
+                if fast:
+                    self.fast_insert(pt)                
+                else:
+                    self.insert(pt)
+        
+    def guess_base(self, data, nsamples=5):
+        ids = choice(np.arange(len(data), dtype=int), size=min(nsamples, len(data)), replace=False)
+        samples = data[ids, :]
+        guess = 0
+        for pt in samples:
+            df = lambda x: self.dist(pt, x)
+            guess += np.mean(np.apply_along_axis(df, 1, data)) / nsamples
+        return guess * 1.618
+            
+    
+    def get_children(self, parents, keep_parents=True):
+        children = set()
+        for parent in parents:
+            children.update(self.tree[parent])
+        if keep_parents:
+            children.update(parents)
+        children.discard(-1)
+        return children
+
+    def get_cutoff(self, parents, reference, level, keep_parents=True):
+        children = set()
+        for parent in parents:
+            for child in self.tree[parent]:
+                if self.dist(reference, self.points[child]) < (self.base / (self.factor ** level)):
+                    children.add(child)
+        if keep_parents:
+            for parent in parents:
+                if self.dist(reference, self.points[parent]) < (self.base / (self.factor ** level)):
+                    children.add(parent)
+        children.discard(-1)
         return children
     
-    def descend_to_indexed(self, current, target):
-        indexed_children = []
-        for parent in current:
-            for child in self.covers[parent]:
-                indexed_children.append(CTINdexedPoint(child, self.distance(target, child)))
-        # heapq to speed up I guess
-        indexed_children.sort()
-        return indexed_children
-
+    def closest_child(self, parent, reference, level, keep_parent=True):
+        children = self.tree[parent]
+        if keep_parent:
+            children.add(parent)
+        closest = self.closest_point(reference, children)
+        if self.dist(reference, closest) < (self.base / (self.factor ** level)):
+            return closest
+        return None
     
-    def run_descent(self, parents, target, cutoff, request, force_terminate=False):
-        # going with linear for now, binsearch will do faster
-        if self.check_terminal(parents) or force_terminate:
-            if len(parents) >= request:
-                return True, parents[:request]
-            else:
-                return False, []
-        
-        if len(parents) == 1 and parents[0] == target:
-            return False, []
+    def cutoff(self, reference, points, level):
+        cut = set()
+        for pt in points:
+            if self.dist(reference, self.points[pt]) < (self.base / (self.factor ** level)):
+                cut.add(pt)
+        return cut
+    
+    def closest_point(self, reference, points):
+        point, dist = None, 1e9
+        for pt in points:
+            d = self.dist(reference, self.points[pt])
+            if d < dist:
+                point, dist = pt, d
+        return point
 
-        indexed_children = self.descend_to_indexed(parents, target)
-        valid = []
-        full = []
-        for ctip in indexed_children:
-            if cutoff == 0 or ctip.distance < cutoff:
-                if ctip.pid not in valid:
-                    valid.append(ctip.pid)
-            if ctip.pid not in full:
-                full.append(ctip.pid)
-        ok, res = self.run_descent(valid, target, cutoff / self.factor, request, (parents == valid))
-        if ok:
-            return ok, res
+    def insert(self, pt):
+        pid = len(self.points)
+        self.points.append(pt)
+        self.tree[pid] = set()
+        
+        parents = [-1]
+        point_parent = -1
+        level = 1
+        while level < self.max_depth:
+#            children = self.get_children(parents)
+            passed = self.get_cutoff(parents, pt, level)
+            if not passed:
+                point_parent = self.closest_point(pt, parents)
+                break
+            else:
+                parents = passed
+                level += 1
         else:
-            ok, res = self.run_descent(full, target, 0, request, (parents == full))
+            point_parent = self.closest_point(pt, parents)
+
+        self.tree[point_parent].add(pid)
+        return point_parent
+
+    def fast_insert(self, pt):
+        pid = len(self.points)
+        self.points.append(pt)
+        self.tree[pid] = set()
+
+        parent = -1
+        level = 1
+        while level < self.max_depth:
+            closest = self.closest_child(parent, pt, level)
+            if closest is None:
+                break
+            parent = closest
+
+        self.tree[parent].add(pid)
+        return parent
+
+    def knn(self, pt, k=5):
+        ok, res = self.step_knn([-1], pt, 0, 0, k + 1)
+        if not ok:
+            print("failed to locate knn")
+        for pid in res:
+            if self.dist(pt, self.points[pid]) < EPS:
+                res.discard(pid)
+                break
+        ret = []
+        for _ in range(k):
+            closest = self.closest_point(pt, res)
+            ret.append(closest)
+            res.discard(closest)
+        return ret
+        
+    def step_knn(self, parents, pt, cutoff_level, depth, k):
+
+        if len(parents) > k and cutoff_level < depth:
+            next_step = self.cutoff(pt, parents, cutoff_level)
+            if next_step:
+                ok, res = self.step_knn(next_step, pt, cutoff_level + 1, depth, k)
+                if ok:
+                    return ok, res
+        
+        if depth < self.max_depth:
+            next_step = self.get_children(parents)
+            ok, res = self.step_knn(next_step, pt, cutoff_level, depth + 1, k)
             if ok:
                 return ok, res
-            return False, []
         
-    def descend_add(self, point):
-        p = len(self.points)
-        self.points.append(point)
-        self.covers[p] = [p]
-        ok, nn = self.run_descent([-1], p, self.limit, 1)
-        if ok:
-            parent = nn[0]
-            self.covers[parent].append(p)
-            return parent
-        else:
-            self.covers[-1].append(p)
-            return -1
+        if len(parents) > k:
+            return True, parents
+        return False, set()
     
-    def descend_search(self, target, k=5):
-        ok, knn = self.run_descent([-1], target, self.limit, k + 1)
-        if ok:
-            return knn[1:]
-        else:
-            return []
+    def execute(self, data, k=5):
+        for pt in data:
+            self.knn(pt, k)
 
-    def add(self, point, verbose=0):
-        # set a point's id, add it to the pool and set its children list
-        p = len(self.points)
-        self.points.append(point)
-        self.covers[p] = [p]
-
-        # setup root as initial parent
-        parents = [-1]
-        # setup cutoff distance (copy hack)
-        limit = 0 + self.limit
-
-        while True:
-            # descend the tree
-            children = self.descend(parents)
-            # cutoff the further points
-            valid = []
-            for c in children:
-                if c != -1:
-                    if self.distance(c, p) < limit and c not in valid:
-                        valid.append(c)
-            
-            # check for loop end conditions:
-            # all points are terminal (leaves)
-            if (len(valid)):
-                parents = valid
-                if self.check_terminal(parents):
-                    break
-            # or there are no points meeting the cutoff limit
-            else:
-                break
-
-            # reduce the cutoff limit
-            limit /= self.factor
         
-        # at this point any point in parents list qualifies to be new point's parent
-        # choosing a random one should reduce three complexity in dense regions
-        # due to the construction method this does not affect the correctness
-        parent = choice(parents)
-        self.covers[parent].append(p)
-        return parent
-        
-    def get_neighbours(self, point_id, k=5, verbose=0):
 
-        # setup root as initial parent
-        parents = [-1]
-        # setup cutoff distance (copy hack)
-        limit = 0 + self.limit
-        # setup a heap for all visited points
-        step = 0
-        cutoff_points = {}
-        used = [False for _ in range(len(self.points))]
-
-        while True:
-            # descend the tree
-            children = self.descend(parents)
-            # update the point heap for all children
-            cutoff_points[step] = []
-            # also cutoff the further points
-            valid = []
-            for c in children:
-                if c != -1:
-                    if self.distance(c, point_id) >= limit:
-                        if not used[c]:
-                            cutoff_points[step].append(c)
-                            used[c] = True
-                    else:
-                        if c not in valid:
-                            valid.append(c)
-            
-            # check for loop end conditions:
-            # all points are terminal (leaves)
-            if (len(valid)):
-                parents = valid
-                if self.check_terminal(parents):
-                    break
-            # or there are no points meeting the cutoff limit
-            else:
-                break
-
-            # reduce the cutoff limit
-            limit /= self.factor
-            pts = sorted([CTINdexedPoint(cutpt, self.distance(cutpt, point_id)) for cutpt in cutoff_points[step]])
-            cutoff_points[step] = pts
-            step += 1
-        
-        # by this point heap contains all visited points sorted from closest to furthest
-        # while this may not be entirely accurate for select few occurances
-        # most of the time first k + 1 heap elements are in fact given point and its KNN
-        cutoff_points[step] = sorted([CTINdexedPoint(cutpt, self.distance(cutpt, point_id)) for cutpt in parents])
-         
-        knn = []
-        while step > 0 and len(knn) < k:
-            for ctip in cutoff_points[step]:
-                pid = ctip.pid
-                if pid != point_id:
-                    knn.append(pid)
-                if len(knn) >= k:
-                    break
-            step -= 1
-
-        return knn
-
+class NaiveNNG:
+    def __init__(self, dist, data):
+        self.distance = dist
+        self.points = data
     
+    def execute(self, data):
+        for a in self.points:
+            for b in self.points:
+                self.distance(a, b)
