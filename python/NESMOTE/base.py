@@ -1,5 +1,5 @@
 import numpy as np
-from RQ.ring_query import RingQuery
+from RQ.neighbors import RingQuery
 
 from typing import Callable
 from sortedcontainers import SortedSet
