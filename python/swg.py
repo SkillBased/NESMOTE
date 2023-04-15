@@ -175,7 +175,7 @@ class HNSW:
     # randomise top layer, get k closest 
     # NOTE: maybe instead set top layer as log(point_id) allowing for more balanced structure
     # next layer (n-1) get closest from the closest of previous layer
-    # shuold work OK
+    # should work OK
     def add(self, point) -> None:
 
         global_logger.log(f"HNSW.add() called")
