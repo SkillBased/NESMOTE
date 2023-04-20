@@ -1,6 +1,6 @@
 import numpy as np
 from numpy.random import choice, randint
-from NESMOTE.base import NeighborhoodGraph, SortedArray
+from NESMOTE.base import SortedArray, NNG
 from NESMOTE.util import IndexedCoverTree
 
 from random import random, gammavariate
@@ -156,7 +156,8 @@ class ClassSampler:
         k_neighbors = self.parameters.get("k-neighbors") if self.parameters.get("k-neighbors") is not None else 5
         dist_restriction = self.parameters.get("distance")
         # fit a graph to class and split it
-        class_ng = NeighborhoodGraph(self.distance, self.points, k_neighbors, dist_restriction)
+        class_ng = NNG(self.distance, k_neighbors, dist_restriction)
+        class_ng.construct(self.points)
         split_type = self.parameters.get("groupby") if self.parameters.get("groupby") is not None else "cliques"
         class_ng.split(how=split_type)
         cutoff = self.parameters.get("group-cut") if self.parameters.get("group-cut") is not None else 0
