@@ -4,7 +4,7 @@ import geomstats.visualization as visualization
 
 import numpy as np
 
-from NESMOTE.oversampler import NESMOTE
+from NESMOTE.deprecaded.oversampler import NESMOTE
 
 sphere = Hypersphere(dim=2)
 

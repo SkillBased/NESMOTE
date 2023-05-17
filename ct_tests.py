@@ -5,7 +5,7 @@ from time import time
 from imblearn.datasets import fetch_datasets
 
 from NESMOTE.util import std_euclid_distance
-from NESMOTE.base import RingNNG, NeighborhoodGraph
+from NESMOTE.deprecaded.base import RingNNG, NeighborhoodGraph
 
 
 dataset = fetch_datasets()["yeast_ml8"]

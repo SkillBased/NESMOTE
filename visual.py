@@ -5,7 +5,7 @@ from sklearn.datasets import make_moons
 from imblearn.datasets import make_imbalance
 
 from NESMOTE.util import std_euclid_distance, std_euclid_wavg
-from NESMOTE.oversampler import NESMOTE, FastNESMOTE
+from NESMOTE.deprecaded.oversampler import NESMOTE, FastNESMOTE
 
 root = Tk()
 root.title("NESMOTE augmentation strategies")

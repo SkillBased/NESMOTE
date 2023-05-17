@@ -1,9 +1,7 @@
 import numpy as np
 
 from numpy.random import choice
-from heapq import heapify, heappush
 
-from time import time
 
 EPS = 1e-6
 
@@ -197,7 +195,7 @@ class SortedArray:
 
 
 '''
-    included support for R^n spaces
+Included support for default R^n spaces
 '''
 
 def std_euclid_distance(a, b):

@@ -2,7 +2,7 @@ import numpy as np
 
 from imblearn.datasets import fetch_datasets
 
-from NESMOTE.base import RingQuery
+from NESMOTE.neighbors import RingQuery
 from NESMOTE.util import std_euclid_distance
 
 from sklearn.neighbors import BallTree

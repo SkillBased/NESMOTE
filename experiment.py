@@ -7,10 +7,16 @@ from sklearn.ensemble import RandomForestClassifier
 
 from imblearn.over_sampling import RandomOverSampler, SMOTE
 
-from NESMOTE.oversampler import NESMOTE
+from NESMOTE.deprecaded.oversampler import NESMOTE
 from NESMOTE.util import std_euclid_distance, std_euclid_wavg
 
+from NESMOTE.oversample import Pipeline
+from NESMOTE.oversample import ANNProcessor, MCProcessor
+from NESMOTE.oversample import UniformSampler, StandardSampler
+from NESMOTE.neighbors import RingQuery, NENN
+
 from time import time
+
 
 def compute_classwize_accuracy(true, pred):
     class_counts = {}
@@ -28,14 +34,13 @@ def compute_classwize_accuracy(true, pred):
     return res
 
 def get_scores(cum_res):
-    balanced_accuracy = 0
-    guesses = 0
-    correct = 0
+    minor, major = 0, 0
     for c in cum_res.keys():
-        balanced_accuracy += cum_res[c][1] / cum_res[c][0] * (1 - cum_res[c][2])
-        guesses += cum_res[c][0]
-        correct += cum_res[c][1]
-    return balanced_accuracy, correct / guesses
+        if cum_res[c][2] < 0.5:
+            minor += cum_res[c][1] / cum_res[c][0]
+        else:
+            major += cum_res[c][1] / cum_res[c][0]
+    return minor, major
 
 
 
@@ -66,92 +71,114 @@ def run_trial(dataset, oversampler, classifier, nruns=5):
                 cum[c][1] += ca[c][1]
     return get_scores(cum)
 
-OS_names = ["Baseline",
-            "RandomOS",
-            "IL-SMOTE",
-            "NE-maxSP",
-            "NE-maxAG",
-            "NE-allSP",
-            "NE-allAG",
-            "NE-KNNSP",
-            "NE-KNNAG",
-            "NE-SMOTE"]
 
-ds_names = ["ecoli", "optical_digits", "abalone", "sick_euthyroid", "spectrometer", "car_eval_34",
-            "us_crime", "yeast_ml8", "car_eval_4", "thyroid_sick", "wine_quality", "solar_flare_m0",
-            "yeast_me2", "ozone_level", "abalone_19"]
-#ds_names = ["ecoli", "oil", "scene"]
-suites = sorted(ds_names)
-kn_values = [3, 5, 8]
-kn_values = [5]
+def main():
+    OS_names = ["Baseline",
+                "RandomOS",
+                "IL-SMOTE",
+                "NE-maxSP",
+                "NE-maxAG",
+                "NE-allSP",
+                "NE-allAG",
+                "NE-KNNSP",
+                "NE-KNNAG",
+                "NE-SMOTE"]
 
-results_acc = {}
-results_bacc = {}
+    ds_names = ["ecoli", "optical_digits", "abalone", "sick_euthyroid", "spectrometer", "car_eval_34",
+                "us_crime", "yeast_ml8", "car_eval_4", "thyroid_sick", "wine_quality", "solar_flare_m0",
+                "yeast_me2", "ozone_level", "abalone_19"]
+    #ds_names = ["ecoli", "oil", "scene"]
+    suites = sorted(ds_names)
+    kn_values = [3, 5, 8]
+    kn_values = [5]
 
-for dataset_name in suites:
-    results_acc[dataset_name] = {}
-    results_bacc[dataset_name] = {}
-    for OS_name in OS_names:
-        results_acc[dataset_name][OS_name] = 0
-        results_bacc[dataset_name][OS_name] = 0
-
-run = 1
-for kneighbors in kn_values:
-    print(f"\n<> Started run {run}/{len(kn_values)} with k_neighbors={kneighbors} <>")
-    run += 1
-
-    oversamplers = {
-        "Baseline" : NotOverSampler(),
-        "RandomOS" : RandomOverSampler(),
-        "IL-SMOTE" : SMOTE(k_neighbors=kneighbors),
-        "NE-maxSP" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "cliques", "wrap": "max", "k-neighbors": kneighbors}),
-        "NE-maxAG" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "cliques", "wrap": "max", "k-neighbors": kneighbors, "weights": "gamma"}),
-        "NE-allSP" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "cliques", "wrap": "all", "k-neighbors": kneighbors}),
-        "NE-allAG" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "cliques", "wrap": "all", "k-neighbors": kneighbors, "weights": "gamma"}),
-        "NE-KNNSP" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "neighbors", "wrap": "max", "k-neighbors": kneighbors}),
-        "NE-KNNAG" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "neighbors", "wrap": "max", "k-neighbors": kneighbors, "weights": "gamma"}),
-        "NE-SMOTE" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "smote", "wrap": "all", "k-neighbors": kneighbors}),
-    }
+    results_macc = {}
+    results_Macc = {}
 
     for dataset_name in suites:
-        print(f"\n-> running {len(oversamplers.keys())} trials from suite {dataset_name}")
-        dataset = datasets[dataset_name]
+        results_macc[dataset_name] = {}
+        results_Macc[dataset_name] = {}
+        for OS_name in OS_names:
+            results_macc[dataset_name][OS_name] = 0
+            results_Macc[dataset_name][OS_name] = 0
+    
+    run = 1
+    for kneighbors in kn_values:
+        print(f"\n<> Started run {run}/{len(kn_values)} with k_neighbors={kneighbors} <>")
+        run += 1
 
-        for OS_name in oversamplers.keys():
-            
-            start = time()
+        oversamplers = {
+            "Baseline" : NotOverSampler(),
+            "RandomOS" : RandomOverSampler(),
+            "IL-SMOTE" : SMOTE(k_neighbors=kneighbors),
+            "NE-allAG" : Pipeline(RingQuery(std_euclid_distance), ANNProcessor(), UniformSampler(std_euclid_wavg)),
+            "NE-maxSP" : Pipeline(RingQuery(std_euclid_distance), MCProcessor(), StandardSampler(std_euclid_wavg)),
+            #"NE-maxAG" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "cliques", "wrap": "max", "k-neighbors": kneighbors, "weights": "gamma"}),
+            #"NE-allSP" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "cliques", "wrap": "all", "k-neighbors": kneighbors}),
+            #"NE-KNNSP" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "neighbors", "wrap": "max", "k-neighbors": kneighbors}),
+            #"NE-KNNAG" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "neighbors", "wrap": "max", "k-neighbors": kneighbors, "weights": "gamma"}),
+            #"NE-SMOTE" : NESMOTE(std_euclid_distance, std_euclid_wavg, params={"groupby": "smote", "wrap": "all", "k-neighbors": kneighbors}),
+        }
 
-            try:
-                oversampler = oversamplers[OS_name]
+        for dataset_name in suites:
+            print(f"\n-> running {len(oversamplers.keys())} trials from suite {dataset_name}")
+            dataset = datasets[dataset_name]
 
-                bacc, acc = run_trial(dataset, oversampler, RandomForestClassifier())
+            for OS_name in oversamplers.keys():
+                
+                start = time()
 
-                if bacc > results_bacc[dataset_name][OS_name]:
-                    results_bacc[dataset_name][OS_name] = bacc
-                if acc > results_acc[dataset_name][OS_name]:
-                    results_acc[dataset_name][OS_name] = acc
-            
-                end = time()
-                print(f"--> trial {OS_name} completed in {round(end - start, 2)}")
-            except Exception as e:
-                print(f"--> Exception caught while running trial {OS_name}")
-                print("----", e)
+                try:
+                    oversampler = oversamplers[OS_name]
 
-out_file = open("results.out", "w")
+                    macc, Macc = run_trial(dataset, oversampler, RandomForestClassifier())
 
-out_file.write("{:15} ".format(""))
-for OS_name in OS_names:
-    out_file.write("  {:8} ".format(OS_name))
-out_file.write("\n")
+                    if macc > results_macc[dataset_name][OS_name]:
+                        results_macc[dataset_name][OS_name] = macc
+                    if Macc > results_Macc[dataset_name][OS_name]:
+                        results_Macc[dataset_name][OS_name] = Macc
+                
+                    end = time()
+                    print(f"--> trial {OS_name} completed in {round(end - start, 2)}")
+                except Exception as e:
+                    print(f"--> Exception caught while running trial {OS_name}")
+                    print("----", e)
 
-for dataset_name in suites:
-    out_file.write("{:15} ".format(dataset_name))
+    out_file = open("results.out", "w")
+
+    out_file.write("{:15} ".format("minor"))
     for OS_name in OS_names:
-        res = results_bacc[dataset_name][OS_name]
-        if res > 0:
-            out_file.write("{:10.4f} ".format(res))
-        else:
-            out_file.write("{:10} ".format("--"))
+        out_file.write("  {:8} ".format(OS_name))
     out_file.write("\n")
 
-out_file.close()  
+    for dataset_name in suites:
+        out_file.write("{:15} ".format(dataset_name))
+        for OS_name in OS_names:
+            res = results_macc[dataset_name][OS_name]
+            if res > 0:
+                out_file.write("{:10.4f} ".format(res))
+            else:
+                out_file.write("{:10} ".format("--"))
+        out_file.write("\n")
+
+    out_file.write("\n")
+
+    out_file.write("{:15} ".format("major"))
+    for OS_name in OS_names:
+        out_file.write("  {:8} ".format(OS_name))
+    out_file.write("\n")
+
+    for dataset_name in suites:
+        out_file.write("{:15} ".format(dataset_name))
+        for OS_name in OS_names:
+            res = results_Macc[dataset_name][OS_name]
+            if res > 0:
+                out_file.write("{:10.4f} ".format(res))
+            else:
+                out_file.write("{:10} ".format("--"))
+        out_file.write("\n")
+
+    out_file.close()  
+
+if __name__ == '__main__':
+    main()

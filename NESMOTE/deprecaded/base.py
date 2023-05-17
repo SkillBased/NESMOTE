@@ -9,75 +9,15 @@ from typing import Callable, Optional
 
 from heapq import nsmallest
 
-class RingQuery:
-    def __init__(self, distance : Callable[..., float]) -> None:
-        self.distance = distance
-        self.data = None
-        self.ring_width = None
-        self.origin_ids = set()
-        self.rings = {}
-    
-    def _adapt_width(self, nsamples : int = 8, cut : float = .01) -> float:
-        if self.data is None:
-            return
-        edge = min(self.data.shape[0], max(16, int(self.data.shape[0] * cut)))
-        origins = np.random.choice(np.arange(self.data.shape[0]), nsamples)
-        edges = [self._adapt_single(origin_id, edge) for origin_id in origins]
-        return np.mean(edges)
-    
-    def _adapt_single(self, origin_id : int, edge : int) -> Optional[float]:
-        origin_distance = lambda point: self.distance(self.data[origin_id], point)
-        distances = np.apply_along_axis(origin_distance, 1, self.data)
-        smallest = nsmallest(edge, distances)
-        return smallest[-1]
+from NESMOTE.neighbors import RingQuery
 
-    def fit(self, X, n_origins : Optional[int] = None, width : Optional[float] = None, n_jobs : int = 1) -> None:
-        self.data = X
-        origin_count = n_origins if n_origins is not None else self.data.shape[1] + 1
-        self.origin_ids = np.random.choice(np.arange(self.data.shape[0]), origin_count)
-        self.ring_width = width if width is not None else self._adapt_width()
-        self.rings = {}
-        for origin_id in self.origin_ids:
-            self.rings[origin_id] = self._process_single(origin_id)
-
-    def _process_single(self, origin_id : int) -> dict[int, set[int]]:
-        origin_distance = lambda point: self.distance(self.data[origin_id], point)
-        ring = {}
-        distances = np.apply_along_axis(origin_distance, 1, self.data)
-        for idx, dist in enumerate(distances):
-            inner, outer = floor(dist / self.ring_width), ceil(dist / self.ring_width)
-            if inner == outer:
-                outer += 1
-            if ring.get(inner) is None:
-                ring[inner] = set()
-            if ring.get(outer) is None:
-                ring[outer] = set()
-            ring[inner].add(idx)
-            ring[outer].add(idx)
-        return ring
-
-
-    def query(self, point, k : int = 5, return_raw : bool = False):
-        point_distance = lambda point_id: (self.distance(self.data[point_id], point), point_id)
-        candidates = None
-        for origin_id in self.origin_ids:
-            d = round(self.distance(point, self.data[origin_id]) / self.ring_width)
-            if candidates is None:
-                candidates = self.rings[origin_id].get(d)
-            else:
-                candidates.intersection_update(self.rings[origin_id].get(d))
-        processed = []
-        for point_id in candidates:
-            processed.append(point_distance(point_id))
-        processed.sort()
-        if k != 0 and k < len(processed):
-            processed = processed[:k]
-        result = [neighbor[1] for neighbor in processed]
-        if return_raw:
-            return self.data[result]
-        return result
 
 class NNG:
+    '''
+    This is the nearest neighbor graph implementation based on RingQuery.
+    It is also structured specifically to be used in the fast clique search as the method requires it.
+    Wierdly enough, running heapq for sorted arrays is slower that custom class.
+    '''
     def __init__(self, dist_func : Callable[..., float], k_neighbors : int = 5, n_jobs : int = 1) -> None:
         self.distance = dist_func
         self.k_neighbors = k_neighbors
@@ -109,11 +49,16 @@ class NNG:
     
     def get_groups(self):
         '''
-            safe return of constructed cliques
+        Python is guilty of returning links instead of values for complex structures.
+        `deepcopy` overrides this behavior for a data-safe return.
         '''
         return deepcopy(self.cliques)
     
     def split(self, how="cliques"):
+        '''
+        This function returns augmentation groups based on the constructed NNG and the method of choice.
+        Note that this does not perform augmentations, just returns all edges.
+        '''
         if how == "cliques":
             self.clique_split()
         elif how == "neighbors":
@@ -121,26 +66,29 @@ class NNG:
         elif how == "smote":
             self.smote_split()
 
-    def neighbor_split(self):
-        '''
-            make a group of all neighbors
-        '''
-        for curr_vert in self.adj_list.keys():
-            self.cliques[curr_vert] = [deepcopy(self.adj_list[curr_vert]["left"]) + deepcopy(self.adj_list[curr_vert]["right"])]
-
     def smote_split(self):
         '''
-            make a smote-like edge groups
+        The standard SMOTE-like approach that returns NNG edges.
+        Both fastest and least quality.
         '''
         for curr_vert in self.adj_list.keys():
             self.cliques[curr_vert] = []
             for neighbor in self.adj_list[curr_vert]["left"].values:
                 self.cliques[curr_vert] += [SortedArray(values=[neighbor, curr_vert], trusted=True)]
 
+    def neighbor_split(self):
+        '''
+        Returns KNN groups for each vertice.
+        A compromise approach that allows for better accuracy than SMOTE-lile and better complexity that cliques.
+        '''
+        for curr_vert in self.adj_list.keys():
+            self.cliques[curr_vert] = [deepcopy(self.adj_list[curr_vert]["left"]) + deepcopy(self.adj_list[curr_vert]["right"])]
+
+
     def clique_split(self):
         '''
-            using a method provided by other research
-            TBA
+        Returns maximal cliques from NNG as augmentation groups.
+        Hihgest accuracy and complexity.
         '''
         for curr_vert in self.adj_list.keys():
             self.cliques[curr_vert] = []
@@ -152,8 +100,8 @@ class NNG:
     
     def update_cliques(self, header, vertice, renovation):
         '''
-            using a method provided by other research
-            TBA
+        This is taken from the algorithm you can read about at
+        https://www.researchgate.net/publication/317130248_A_linear_time_algorithm_for_maximal_clique_enumeration_in_large_sparse_graphs
         '''
         if (len(self.cliques[header]) == 0 or renovation.empty()):
             self.cliques[header] += [SortedArray([vertice])]
