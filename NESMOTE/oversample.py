@@ -199,7 +199,7 @@ class Pipeline:
     
     def fit_resample(self, X, y):
         nX, ny = [], []
-        if self.neighbors is None or self.processor is None:
+        if self.neighbors is None or self.processor is None or self.sampler is None:
             raise ZeroDivisionError  # placeholder
         classes = {}
         majority = 0
@@ -215,19 +215,25 @@ class Pipeline:
             if targets < 1:
                 continue
             # fit nearest neighbor search
+#            print("init", flush=True)
             self.neighbors.fit(class_pts)
+#            print("knn fit", flush=True)
             # construct groups based on KNN graph
             self.processor.split(self.neighbors)
+#            print("knn split", flush=True)
             # extract groups
             groups = self.processor.get(targets)
+#            print("split get", flush=True)
             # preprocessing before generation
             augment = []
             for group in groups:
                 raw = [class_pts[idx] for idx in group]
                 if len(raw):
                     augment.append(raw)
+#            print("prepared", flush=True)
             # synthetic data generation
             nX = self.sampler.make_samples(augment)
+#            print("sampled", flush=True)
             ny = [class_value] * len(nX)
         resX, resy = X, y
         if len(nX):

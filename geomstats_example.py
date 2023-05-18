@@ -4,7 +4,8 @@ import geomstats.visualization as visualization
 
 import numpy as np
 
-from NESMOTE.deprecaded.oversampler import NESMOTE
+from NESMOTE.oversample import Pipeline, MCProcessor, StandardSampler
+from NESMOTE.neighbors import RingQuery
 
 sphere = Hypersphere(dim=2)
 
@@ -28,7 +29,7 @@ params = {
     "strategy" : "resample"
 }
 
-augmenter = NESMOTE(dist_func, wavg_func, params=params)
+augmenter = Pipeline(RingQuery(dist_func), MCProcessor(), StandardSampler(wavg_func))
 nX, ny = augmenter.fit_sample(data, y)
 
 visualization.plot(data, space="S2")

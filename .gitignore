@@ -1,0 +1,3 @@
+corrs.npy
+labels.npy
+*.out

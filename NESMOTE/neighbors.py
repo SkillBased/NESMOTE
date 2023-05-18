@@ -59,7 +59,7 @@ class RingQuery(NENN):
         Not too little to miss any neighbors, but not too large to slow down the algorithm
         '''
         origin_distance = lambda point: self.distance(self.data[origin_id], point)
-        distances = np.apply_along_axis(origin_distance, 1, self.data)
+        distances = np.array([origin_distance(pt) for pt in self.data])
         smallest = nsmallest(edge, distances)
         return smallest[-1]
 
@@ -84,7 +84,7 @@ class RingQuery(NENN):
         '''
         origin_distance = lambda point: self.distance(self.data[origin_id], point)
         ring = {}
-        distances = np.apply_along_axis(origin_distance, 1, self.data)
+        distances = np.array([origin_distance(pt) for pt in self.data])
         for idx, dist in enumerate(distances):
             inner, outer = floor(dist / self.ring_width), ceil(dist / self.ring_width)
             if inner == outer:
